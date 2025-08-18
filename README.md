@@ -1,6 +1,6 @@
 # DCF Valuation Model
 
-This project implements a Python-based **Discounted Cash Flow (DCF) valuation model** for a US-listed company with relatively predictable and stable revenues. The model estimates the intrinsic equity value and price per share using historical financial data, projected cash flows, and a terminal value.
+This project implements a Python-based **Discounted Cash Flow (DCF) valuation model** for a US-listed company with relatively predictable and stable revenues. The model estimates the intrinsic equity value and price per share using historical financial data, projected cash flows, and a terminal value. This model is better suited for U.S.-listed companies with relatively predictable cash flows.
 
 **Note:** This model is **not intended to provide precise valuation figures**. It relies on simplifying assumptions and serves primarily as a **learning exercise** to practice the DCF methodology and apply financial concepts in Python.
 ---
