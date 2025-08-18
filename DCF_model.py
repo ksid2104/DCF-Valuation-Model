@@ -14,7 +14,7 @@ pd.set_option('display.max_columns', None)
 # =========================
 # Variables initiales à définir par l'utilisateur
 # =========================
-ticker = "MSFT"  # Ticker de l'entreprise à analyser
+ticker = input("Entrez le ticker de l'entreprise à analyser : ")  # Ticker de l'entreprise à analyser
 
 # Prévision : nombre d'années à projeter pour les FCF
 forecast_years = pd.date_range(
@@ -235,3 +235,4 @@ plt.pie(
 plt.title("Répartition de la valorisation")
 plt.legend(["DCF", "Valeur Terminale"])
 plt.show()
+
