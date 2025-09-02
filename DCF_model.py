@@ -6,7 +6,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas_datareader.data as web   # Données macro-économiques (PIB)
-
+import seaborn as sn
 # Options pandas pour affichage complet
 pd.set_option("display.max_rows", None)
 pd.set_option('display.max_columns', None)
@@ -18,17 +18,13 @@ ticker = input("Entrez le ticker de l'entreprise à analyser : ")  # Ticker de l
 
 # Prévision : nombre d'années à projeter pour les FCF
 forecast_years = pd.date_range(
-    start=pd.to_datetime(yf.Ticker("MSFT").financials.columns[0]),
+    start=pd.to_datetime(yf.Ticker(ticker).financials.columns[0]),
     periods=int(input("Entrez le nombre d'années de prévision : ")),
     freq="Y",
     normalize=True
 )[1:]
-
-# Equity Risk Premium implicite (source Damodaran NYU Stern)
-implied_ERP = float(input(
-    "Entrez la valeur de l'ERP implicite (source : ➝ https://pages.stern.nyu.edu/~adamodar/) : "
-))
-
+#Taux de croissance terminal
+g = float(input("Taux de croissance terminale (ex: 2%=0.02) : "))
 # =========================
 # Récupération des données financières historiques via yFinance
 # =========================
@@ -49,7 +45,7 @@ def FCF(income_statement=income_statement, cashflow=cashflow):
     ebit = income_statement.loc["EBIT"]
     t = income_statement.loc["Tax Rate For Calcs"]
     amortization = cashflow.loc["Depreciation And Amortization"]
-    capex = abs(cashflow.loc["Capital Expenditure"])
+    capex = abs(cashflow.loc["Capital Expenditure"])      # abs() est pertinent pour corriger le signe des données yfinance (souvent négatives).
     delta_BFR = cashflow.loc["Change In Working Capital"]
     return (ebit*(1-t) + amortization - capex + delta_BFR).dropna()
 
@@ -66,7 +62,7 @@ def projected_fcf(fcf=FCF(), years=forecast_years):
     return pd.Series(values, index=years_dt).sort_index(ascending=True)
 
 
-def WACC(income_statement=income_statement, balance_sheet=balance_sheet, implied_ERP=implied_ERP):
+def WACC(income_statement=income_statement, balance_sheet=balance_sheet):
     """
     Calcul du WACC (Weighted Average Cost of Capital)
     WACC = (E/(D+E))*Re + (D/(D+E))*Rd*(1-T)
@@ -80,8 +76,8 @@ def WACC(income_statement=income_statement, balance_sheet=balance_sheet, implied
     # CAPM pour Re
     risk_free_rate = float(yf.download("^TNX", auto_adjust=True)["Close"].iloc[-1]/100)
     beta = yf.Ticker(ticker).info["beta"]
-    rm = implied_ERP
-    re = risk_free_rate + beta*rm
+    rm = 0.0384   # Equity Risk Premium implicite (source Damodaran NYU Stern)
+    re = risk_free_rate + beta * rm
     t = income_statement.loc["Tax Rate For Calcs"].iloc[0]
 
     return float((e/(d+e))*re + (d/(d+e))*rd*(1-t))
@@ -96,16 +92,10 @@ def DCF(projected_fcf=projected_fcf(), WACC=WACC()):
     return dcf
 
 
-def Terminal_Value(fcf=FCF(), projected_fcf=projected_fcf(), wacc=WACC()):
+def Terminal_Value(fcf=FCF(), projected_fcf=projected_fcf(), wacc=WACC(),g=g):
     """
     Calcul de la valeur terminale (TV)
-    TV = FCF dernier an * (1+g) / (WACC - g)
-    g = moyenne taux croissance PIB US + taux sans risque
-    """
-    gdp_values = pd.DataFrame(web.DataReader("GDPCA", "fred", start='1928-01-01'))
-    gdp_growth = (gdp_values.iloc[-1]/gdp_values.iloc[0])**(1/(len(gdp_values)))-1
-    risk_free_rate = float(yf.download("^TNX", auto_adjust=True)["Close"].iloc[-1]/100)
-    g = (gdp_growth + risk_free_rate)/2
+    TV = FCF dernier an * (1+g) / (WACC - g)"""
     tv = projected_fcf.iloc[-1] * (1 + g) / (wacc - g)
     return float(tv), float(g)
 
@@ -119,13 +109,15 @@ def Final_Valuation(dcf=DCF(), tv=Terminal_Value()[0], WACC=WACC()):
     return valuation
 
 
-def Equity_Value(valuation=Final_Valuation()):
+def Equity_Value(valuation=Final_Valuation(), balance_sheet=balance_sheet):
     """
     Valeur des capitaux propres = Valorisation - Dette nette
+    Net Debt = Total Debt - Cash and Short Term Investments
     """
-    net_debt = balance_sheet.loc["Net Debt"].iloc[0]
+    total_debt = balance_sheet.loc["Total Debt"].iloc[0]
+    cash = balance_sheet.loc["Cash Cash Equivalents And Short Term Investments"].iloc[0]
+    net_debt = total_debt- cash
     return valuation - net_debt
-
 
 def Price_per_share(equity_value=Equity_Value(), balance_sheet=balance_sheet):
     """
@@ -135,46 +127,18 @@ def Price_per_share(equity_value=Equity_Value(), balance_sheet=balance_sheet):
     price_per_share = equity_value / number_of_shares
     return price_per_share
 
-
-def sensitivity_table(projected_fcf=projected_fcf()):
-    """
-    Tableau de sensibilité : WACC vs Croissance terminale g
-    """
-    wacc_range = np.arange(
-        float(input("Entrez la valeur minimale de WACC : ")),
-        float(input("Entrez la valeur maximale de WACC : ")),
-        float(input("Entrez l'incrément pour WACC : "))
-    )
-    g_range = np.arange(
-        float(input("Entrez la valeur minimale de g (croissance terminale) : ")),
-        float(input("Entrez la valeur maximale de g (croissance terminale) : ")),
-        float(input("Entrez l'incrément pour g (croissance terminale) : "))
-    )
-    sensibilité_df = pd.DataFrame(index=wacc_range, columns=g_range)
-    for wacc in wacc_range:
-        for g in g_range:
-            if wacc > g:
-                dcf = DCF(projected_fcf, wacc)
-                tv = projected_fcf.iloc[-1] * (1 + g) / (wacc - g)
-                valuation = Final_Valuation(dcf, tv, wacc)
-                sensibilité_df.loc[float(wacc), float(g)] = round(float(valuation), 2)
-    return sensibilité_df.dropna(axis=0, how="all").sort_index(ascending=False).sort_index(axis=1, ascending=False)
-
-
 # =========================
 # Exécution du modèle
 # =========================
 fcf_historical = FCF()
 fcf_projected = projected_fcf()
 Final_FCF = pd.concat([fcf_historical, fcf_projected]).sort_index(ascending=False)
-
 Wacc = WACC()
 dcf = DCF()
 tv, g = Terminal_Value()
 valuation = Final_Valuation()
 equity_value = Equity_Value()
 price_per_share = Price_per_share()
-sensibilité_df = sensitivity_table()
 
 # =========================
 # Affichage résultats
@@ -194,7 +158,7 @@ print(df1.applymap(lambda v: f"{v:,.0f} $" if pd.notnull(v) else ""))
 print("---------------------------------------------Résultats-------------------------------------------------")
 pd.set_option("display.float_format", "{:,.3f}".format)
 print(df2)
-print("Répartition de la valorisation : DCF = {}%, TV = {}%".format(
+print("Répartition de la valorisation : DCF = {:.2f}%, TV = {:.2f}%".format(
     (sum(dcf)/valuation)*100,
     tv/(1+Wacc)**len(dcf)/valuation*100
 ))
@@ -203,10 +167,6 @@ print((
     if price_per_share < df2["Prix actuel du marché (réel)"] 
     else f"Selon ce modèle, {ticker} semble surévalué de {price_per_share - df2['Prix actuel du marché (réel)']:,.2f} $"
 ))
-print("------------------------------------Tableau de sensibilité (WACC et Croissance terminale (g))---------------------------------------")
-pd.reset_option("display.float_format")
-print(sensibilité_df.applymap(lambda v: f"{v:,.0f} $" if pd.notnull(v) else ""))
-
 # =========================
 # Visualisation
 # =========================
@@ -221,7 +181,7 @@ plt.legend()
 plt.show()
 
 # FCF vs DCF
-df1.plot(kind='bar', figsize=(10, 6), title=f"FCF et DCF pour {ticker}")
+df1.sort_index(ascending=True).year.plot(kind='bar', figsize=(10, 6), title=f"FCF et DCF pour {ticker}")
 plt.xlabel("Années")
 plt.ylabel("Montant en $")
 plt.legend()
@@ -235,4 +195,34 @@ plt.pie(
 plt.title("Répartition de la valorisation")
 plt.legend(["DCF", "Valeur Terminale"])
 plt.show()
+
+# =========================
+# Table de sensibilité 
+# =========================
+
+answer = input("Voulez-vous construire une table de sensibilité (WACC et Croissance terminale (g)) ?  Tapez Oui ou Non :")
+if answer == "Oui":
+    def sensitivity_table(projected_fcf=projected_fcf()):
+        """Tableau de sensibilité : WACC vs Croissance terminale g"""
+        wacc_range = np.arange(
+            float(input("Entrez la valeur minimale de WACC : ")),
+            float(input("Entrez la valeur maximale de WACC : ")),
+            float(input("Entrez l'incrément pour WACC : ")))
+        g_range = np.arange(
+            float(input("Entrez la valeur minimale de g (croissance terminale) : ")),
+            float(input("Entrez la valeur maximale de g (croissance terminale) : ")),
+            float(input("Entrez l'incrément pour g (croissance terminale) : ")))
+        sensibilité_df = pd.DataFrame(index=wacc_range, columns=g_range)
+        for wacc in wacc_range:
+            for g in g_range:
+                if wacc > g:
+                    dcf = DCF(projected_fcf, wacc)
+                    tv = projected_fcf.iloc[-1] * (1 + g) / (wacc - g)
+                    valuation = Final_Valuation(dcf, tv, wacc)
+                    sensibilité_df.loc[float(wacc), float(g)] = round(float(valuation), 2)
+                    return sensibilité_df.dropna(axis=0, how="all").sort_index(ascending=False).sort_index(axis=1, ascending=False)
+    sensibilité_df = sensitivity_table()
+    print("------------------------------------Tableau de sensibilité (WACC et Croissance terminale (g))---------------------------------------")
+    pd.reset_option("display.float_format")
+    print(sensibilité_df.applymap(lambda v: f"{v:,.0f} $" if pd.notnull(v) else ""))
 
