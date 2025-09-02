@@ -22,8 +22,8 @@ This project implements a Python-based **Discounted Cash Flow (DCF) valuation mo
 
 ## Methodology key points
 - For the market risk premium, we use an exogenous ERP. You can find it by clicking on this link : https://pages.stern.nyu.edu/~adamodar/
-- Terminal value uses a perpetual growth rate calculated as the average of long-term US GDP growth and the current risk-free rate.  
-- Sensitivity analysis explores valuation across WACC from 1%–20% and growth rate `g` from 1%–10%.
+- Terminal value uses an arbitrary perpetual growth rate   
+- Sensitivity analysis explores valuation across WACC from x% to x% and growth rate `g` from x% to x%.
 
 ---
 
