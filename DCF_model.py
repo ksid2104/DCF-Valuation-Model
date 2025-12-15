@@ -47,7 +47,7 @@ def FCF(income_statement=income_statement, cashflow=cashflow):
     amortization = cashflow.loc["Depreciation And Amortization"]
     capex = abs(cashflow.loc["Capital Expenditure"])      # abs() est pertinent pour corriger le signe des données yfinance (souvent négatives).
     delta_BFR = cashflow.loc["Change In Working Capital"]
-    return (ebit*(1-t) + amortization - capex + delta_BFR).dropna()
+    return (ebit*(1-t) + amortization - capex - delta_BFR).dropna()
 
 
 def projected_fcf(fcf=FCF(), years=forecast_years):
@@ -225,4 +225,5 @@ if answer == "Oui":
     print("------------------------------------Tableau de sensibilité (WACC et Croissance terminale (g))---------------------------------------")
     pd.reset_option("display.float_format")
     print(sensibilité_df.applymap(lambda v: f"{v:,.0f} $" if pd.notnull(v) else ""))
+
 
